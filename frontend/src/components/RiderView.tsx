@@ -7,23 +7,50 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MapPin, Loader2 } from "lucide-react";
 import Map from "./Map";
+import { useRideMatching } from "@/hooks/useRideMatching";
 
 export default function RiderView() {
   const [destination, setDestination] = useState("");
   const [pickup, setPickup] = useState("");
-  const [isSearching, setIsSearching] = useState(false);
-  const [hasResults, setHasResults] = useState(false);
+  const [userId] = useState(() => {
+    // Generate or retrieve user ID (in production, use auth)
+    if (typeof window !== "undefined") {
+      let id = localStorage.getItem("rider_user_id");
+      if (!id) {
+        id = crypto.randomUUID();
+        localStorage.setItem("rider_user_id", id);
+      }
+      return id;
+    }
+    return "rider-" + Math.random().toString(36).substr(2, 9);
+  });
+  const [userName] = useState("Rider User");
+
+  const {
+    currentRequest,
+    matches,
+    isLoading,
+    error,
+    createRequest,
+  } = useRideMatching({
+    userId,
+    userRole: "rider",
+    userName,
+  });
+
+  const isSearching = isLoading;
+  const hasResults = matches.length > 0;
 
   const handleFindPool = async () => {
     if (!destination || !pickup) {
       return;
     }
 
-    setIsSearching(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-    setIsSearching(false);
-    setHasResults(true);
+    try {
+      await createRequest(pickup, destination);
+    } catch (err) {
+      console.error("Failed to find pool:", err);
+    }
   };
 
   return (
@@ -97,27 +124,35 @@ export default function RiderView() {
         </Card>
       )}
 
+      {/* Error Message */}
+      {error && (
+        <Card className="border-destructive">
+          <CardContent className="pt-6">
+            <p className="text-sm text-destructive">{error}</p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Results */}
-      {hasResults && !isSearching && (
+      {hasResults && !isSearching && matches[0] && currentRequest && (
         <Card>
           <CardContent className="pt-6">
             <div className="space-y-4">
               <div>
                 <h3 className="font-semibold text-lg mb-2">Match Found!</h3>
                 <p className="text-sm text-muted-foreground">
-                  Driver is 2 minutes away
+                  Driver: {matches[0].driver_name}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Distance: {Math.round(matches[0].distance_to_route)}m from route
                 </p>
               </div>
 
               <div className="h-64 w-full rounded-3xl overflow-hidden">
                 <Map
-                  polyline=""
-                  pickup={pickup ? { lat: 37.7749, lng: -122.4194 } : undefined}
-                  dropoff={
-                    destination
-                      ? { lat: 37.7849, lng: -122.4094 }
-                      : undefined
-                  }
+                  polyline={matches[0].route_polyline || ""}
+                  pickup={currentRequest.pickup}
+                  dropoff={currentRequest.dropoff}
                 />
               </div>
 
@@ -125,12 +160,12 @@ export default function RiderView() {
                 <div className="flex items-center gap-2 text-sm">
                   <MapPin className="h-4 w-4 text-muted-foreground" />
                   <span className="font-medium">Pickup:</span>
-                  <span>{pickup || "123 Main St"}</span>
+                  <span>{pickup}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   <MapPin className="h-4 w-4 text-muted-foreground" />
                   <span className="font-medium">Dropoff:</span>
-                  <span>{destination || "456 Oak Ave"}</span>
+                  <span>{destination}</span>
                 </div>
               </div>
 
@@ -138,6 +173,17 @@ export default function RiderView() {
                 Confirm Ride
               </Button>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* No Results */}
+      {!hasResults && !isSearching && currentRequest && (
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground text-center">
+              No matches found. Try again later.
+            </p>
           </CardContent>
         </Card>
       )}
